@@ -1,7 +1,7 @@
 console.log("Content script loaded");
 
 // Configuration
-const LOG_LEVEL = 'DEBUG'; // Set to 'ERROR' in production
+const LOG_LEVEL = 'DEBUG';
 const MAX_SEND_ATTEMPTS = 3;
 const SEND_RETRY_DELAY = 2000; // in milliseconds
 const MUTATION_DEBOUNCE_DELAY = 500; // in milliseconds
