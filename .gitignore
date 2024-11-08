@@ -1,0 +1,26 @@
+# Ignore node_modules directory
+node_modules/
+
+# Ignore build output directories
+dist/
+build/
+
+# Ignore temporary files
+*.log
+*.tmp
+
+# Ignore local environment settings
+.env
+.env.local
+
+# Ignore Chrome extension specific files
+*.pem
+*.crx
+
+# Ignore IDE specific files
+.vscode/
+.idea/
+
+# Ignore OS generated files
+.DS_Store
+Thumbs.db

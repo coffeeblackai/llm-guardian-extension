@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "detect-secrets": "^1.0.6"
+  }
+}
