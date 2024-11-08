@@ -17,6 +17,7 @@ function log(level, message, ...args) {
 
 // Determine the environment and set the base URL accordingly
 const isDev = chrome.runtime.getManifest().version_name.includes('dev');
+console.log('isDev', isDev);
 const baseUrl = isDev ? 'http://localhost:3000' : 'https://app.llmsecrets.com';
 
 // Flags and variables

@@ -27,14 +27,6 @@ rollback_manifest_version() {
   echo "Manifest changes rolled back"
 }
 
-# Function to bundle the extension into a zip file
-bundle_extension() {
-  local version=$(grep -oE '"version": "[^"]*' manifest.json | cut -d '"' -f 4)
-  local zip_name="chrome-extension-v$version.zip"
-  zip -r $zip_name . -x "*.git*" "*.DS_Store"
-  echo "Extension bundled into $zip_name"
-}
-
 # Function to create a GitHub package
 create_github_package() {
   local version=$(grep -oE '"version": "[^"]*' manifest.json | cut -d '"' -f 4)
@@ -47,7 +39,6 @@ create_github_package() {
 # Main script execution
 update_content_js
 update_manifest_version
-bundle_extension
 create_github_package
 rollback_content_js
 rollback_manifest_version
