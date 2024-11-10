@@ -6,6 +6,7 @@ const MAX_SEND_ATTEMPTS = 3;
 const SEND_RETRY_DELAY = 2000; // in milliseconds
 const MUTATION_DEBOUNCE_DELAY = 500; // in milliseconds
 const TEXT_REPLACEMENT_TIMEOUT = 5000; // in milliseconds
+const ERROR_POPUP_TIMEOUT = 5000; // in milliseconds
 
 // Logging Utility
 const LOG_LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
@@ -48,6 +49,7 @@ async function initRedactor() {
 
   if (!textarea) {
     log('ERROR', "Textarea not found after 3 attempts");
+    showErrorPopup("Textarea not found. Please try again.");
     return;
   }
 
@@ -147,6 +149,7 @@ function initiateRedaction(textarea) {
     })
     .catch((error) => {
       log('ERROR', "Redaction failed", error);
+      showErrorPopup("Redaction failed. Please try again.");
       addEventListeners(textarea);
       isRedacting = false;
       hideLoadingIndicator();
@@ -209,6 +212,7 @@ function observeTextareaChanges() {
     });
   } else {
     log('ERROR', "MutationObserver is not supported in this browser.");
+    showErrorPopup("MutationObserver is not supported in this browser.");
     // Implement fallback or notify the user
   }
 }
@@ -267,7 +271,7 @@ async function scanAndRedact(text, textarea) {
     const apiKey = await getApiKey();
     if (!apiKey) {
       log('ERROR', "API key is missing or invalid");
-      notifyUser("API key is missing. Please set your API key in the extension settings.");
+      showErrorPopup("API key is missing. Please set your API key in the extension settings.");
       isRedacting = false;
       hideLoadingIndicator();
       return;
@@ -299,20 +303,24 @@ async function scanAndRedact(text, textarea) {
         hideLoadingIndicator();
       } else {
         log('WARN', "No redactedText found in the response");
+        showErrorPopup("No redacted text found in the response.");
         isRedacting = false;
         hideLoadingIndicator();
+        triggerSendAction(); // Trigger send action even if redaction fails
       }
     } else {
       log('ERROR', `Error in scanning API call: ${response.status} ${response.statusText}`);
-      notifyUser("Redaction failed. Please try again.");
+      showErrorPopup("Redaction failed. Please try again.");
       isRedacting = false;
       hideLoadingIndicator();
+      triggerSendAction(); // Trigger send action even if redaction fails
     }
   } catch (error) {
     log('ERROR', "Error in scanning API call", error);
-    notifyUser("An error occurred during redaction. Please try again.");
+    showErrorPopup("An error occurred during redaction. Please try again.");
     isRedacting = false;
     hideLoadingIndicator();
+    triggerSendAction(); // Trigger send action even if redaction fails
   }
 }
 
@@ -330,7 +338,7 @@ function triggerSendAction() {
       setTimeout(attemptClick, SEND_RETRY_DELAY);
     } else {
       log('ERROR', "Failed to find send button after multiple attempts");
-      notifyUser("Unable to send the redacted message automatically.");
+      showErrorPopup("Unable to send the redacted message automatically.");
     }
   }
   attemptClick();
@@ -518,6 +526,57 @@ function hideLoadingIndicator() {
   if (loadingIndicator) {
     loadingIndicator.remove();
   }
+}
+
+// Function to show an error popup
+function showErrorPopup(message) {
+  // Prevent multiple popups
+  if (document.getElementById('llmsecrets-error-popup')) return;
+
+  // Create the error popup container
+  const errorPopup = document.createElement('div');
+  errorPopup.id = 'llmsecrets-error-popup';
+  errorPopup.setAttribute('role', 'alert');
+  errorPopup.setAttribute('aria-live', 'assertive');
+  errorPopup.style.position = 'fixed';
+  errorPopup.style.top = '20px';
+  errorPopup.style.right = '20px';
+  errorPopup.style.width = '20%';
+  errorPopup.style.backgroundColor = '#f44336'; // Red background
+  errorPopup.style.color = '#fff'; // White text
+  errorPopup.style.padding = '15px';
+  errorPopup.style.borderRadius = '5px';
+  errorPopup.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+  errorPopup.style.zIndex = '10001'; // Ensure it's on top
+  errorPopup.style.display = 'flex';
+  errorPopup.style.justifyContent = 'space-between';
+  errorPopup.style.alignItems = 'flex-start'; // Align items to the top
+
+  // Create the close button
+  const closeButton = document.createElement('button');
+  closeButton.textContent = 'X';
+  closeButton.style.backgroundColor = 'transparent';
+  closeButton.style.border = 'none';
+  closeButton.style.color = '#fff';
+  closeButton.style.cursor = 'pointer';
+  closeButton.style.marginTop = '0'; // Align button to the top
+  closeButton.addEventListener('click', () => {
+    errorPopup.remove();
+  });
+
+  // Set the message and append the close button
+  const messageSpan = document.createElement('span');
+  messageSpan.textContent = message;
+  errorPopup.appendChild(messageSpan);
+  errorPopup.appendChild(closeButton);
+
+  // Append the error popup to the body
+  document.body.appendChild(errorPopup);
+
+  // Automatically remove the popup after a timeout
+  setTimeout(() => {
+    errorPopup.remove();
+  }, ERROR_POPUP_TIMEOUT);
 }
 
 // Function to notify the user (can be customized to use browser notifications or UI elements)

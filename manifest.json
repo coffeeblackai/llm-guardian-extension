@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "LLM Guardian",
-    "version": "0.7.2",
-    "version_name": "prod",
+    "version": "0.7.3",
+    "version_name": "dev",
     "description": "Redacts secrets in ChatGPT prompts.",
     "action": {
       "default_icon": {
@@ -13,22 +13,13 @@
       "48": "logo-white.png"
     },
     "permissions": [
-      "management",
       "storage",
-      "contextMenus",
       "activeTab",
-      "tabs",
-      "scripting",
-      "webNavigation",
-      "cookies",
-      "identity",
-      "https://api.llmsecrets.com/*",
-      "https://localhost/*"
+      "scripting"
     ],
     "host_permissions": [
-      "<all_urls>",
       "https://api.llmsecrets.com/*",
-      "https://localhost/*"
+      "https://chatgpt.com/*"
     ],
     "content_scripts": [
       {
@@ -38,8 +29,8 @@
     ],
     "web_accessible_resources": [
       {
-        "resources": ["logo.svg", "logo-black.svg", "logo-white.svg", "logo-white.png", "logo-black.png"],
-        "matches": ["<all_urls>"]
+        "resources": ["logo-white.png", "logo-black.png"],
+        "matches": ["https://chatgpt.com/*"]
       }
     ],
     "options_page": "options.html",
