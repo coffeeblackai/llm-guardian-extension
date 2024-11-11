@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "LLM Guardian",
     "version": "1.0.0",
-    "version_name": "dev",
+    "version_name": "prod",
     "description": "Redacts secrets in ChatGPT prompts.",
     "action": {
       "default_icon": {
