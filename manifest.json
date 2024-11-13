@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "LLM Guardian",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "version_name": "prod",
     "description": "Redacts secrets in ChatGPT prompts.",
     "action": {
@@ -14,8 +14,7 @@
     },
     "permissions": [
       "storage",
-      "activeTab",
-      "scripting"
+      "activeTab"
     ],
     "host_permissions": [
       "https://api.llmsecrets.com/*",
