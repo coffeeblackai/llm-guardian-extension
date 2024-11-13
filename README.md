@@ -56,4 +56,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Contact
 
-For any inquiries or support, please contact us at support@llmguardian.com.
+For any inquiries or support, please contact us at https://llmsecrets.com/support
