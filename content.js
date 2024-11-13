@@ -4,8 +4,8 @@ console.log("Content script loaded");
 const LOG_LEVEL = 'DEBUG';
 const MAX_SEND_ATTEMPTS = 1; // Only attempt once
 const SEND_RETRY_DELAY = 2000; // in milliseconds
+const SEND_ACTION_DELAY = 1000; // Delay before triggering send action (in milliseconds)
 const MUTATION_DEBOUNCE_DELAY = 500; // in milliseconds
-const TEXT_REPLACEMENT_TIMEOUT = 5000; // in milliseconds
 const ERROR_POPUP_TIMEOUT = 5000; // in milliseconds
 
 // Logging Utility
@@ -264,7 +264,10 @@ async function scanAndRedact(text, textarea) {
         textarea.dispatchEvent(inputEvent);
         log('INFO', "Redaction completed, triggering send action");
 
-        // Trigger send action immediately
+        // Introduce a delay before triggering send action
+        await new Promise(resolve => setTimeout(resolve, SEND_ACTION_DELAY));
+
+        // Trigger send action after delay
         triggerSendAction();
         isRedacting = false;
       } else {
