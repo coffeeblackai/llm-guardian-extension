@@ -270,10 +270,11 @@ async function scanAndRedact(text, textarea) {
   try {
     const apiKey = await getApiKey();
     if (!apiKey) {
-      log('ERROR', "API key is missing or invalid");
-      showErrorPopup("API key is missing. Please set your API key in the extension settings.");
+      log('WARN', "API key is missing or invalid");
+      showErrorPopup("API key is missing. Please set your API key in the extension settings.", true);
       isRedacting = false;
       hideLoadingIndicator();
+      triggerSendAction(); // Trigger send action even if API key is missing
       return;
     }
     const response = await fetchWithRetry(`${baseUrl}/api/secrets`, {
@@ -529,7 +530,7 @@ function hideLoadingIndicator() {
 }
 
 // Function to show an error popup
-function showErrorPopup(message) {
+function showErrorPopup(message, showGetApiKeyButton = false) {
   // Prevent multiple popups
   if (document.getElementById('llmsecrets-error-popup')) return;
 
@@ -542,13 +543,14 @@ function showErrorPopup(message) {
   errorPopup.style.top = '20px';
   errorPopup.style.right = '20px';
   errorPopup.style.width = '20%';
-  errorPopup.style.backgroundColor = '#f44336'; // Red background
-  errorPopup.style.color = '#fff'; // White text
+  errorPopup.style.backgroundColor = '#fff'; // White background
+  errorPopup.style.color = '#000'; // Black text
   errorPopup.style.padding = '15px';
   errorPopup.style.borderRadius = '5px';
   errorPopup.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
   errorPopup.style.zIndex = '10001'; // Ensure it's on top
   errorPopup.style.display = 'flex';
+  errorPopup.style.flexDirection = 'column';
   errorPopup.style.justifyContent = 'space-between';
   errorPopup.style.alignItems = 'flex-start'; // Align items to the top
 
@@ -557,9 +559,9 @@ function showErrorPopup(message) {
   closeButton.textContent = 'X';
   closeButton.style.backgroundColor = 'transparent';
   closeButton.style.border = 'none';
-  closeButton.style.color = '#fff';
+  closeButton.style.color = '#000';
   closeButton.style.cursor = 'pointer';
-  closeButton.style.marginTop = '0'; // Align button to the top
+  closeButton.style.alignSelf = 'flex-end'; // Align button to the top right
   closeButton.addEventListener('click', () => {
     errorPopup.remove();
   });
@@ -567,8 +569,26 @@ function showErrorPopup(message) {
   // Set the message and append the close button
   const messageSpan = document.createElement('span');
   messageSpan.textContent = message;
-  errorPopup.appendChild(messageSpan);
   errorPopup.appendChild(closeButton);
+  errorPopup.appendChild(messageSpan);
+
+  // Add "Get API Key" button if needed
+  if (showGetApiKeyButton) {
+    const getApiKeyButton = document.createElement('button');
+    getApiKeyButton.textContent = 'Get API Key';
+    getApiKeyButton.style.backgroundColor = '#000'; // Black background
+    getApiKeyButton.style.color = '#fff'; // White text
+    getApiKeyButton.style.border = 'none';
+    getApiKeyButton.style.padding = '10px';
+    getApiKeyButton.style.borderRadius = '5px';
+    getApiKeyButton.style.cursor = 'pointer';
+    getApiKeyButton.style.marginTop = '10px';
+    getApiKeyButton.style.width = '100%'; // Full width
+    getApiKeyButton.addEventListener('click', () => {
+      window.location.href = `${baseUrl}/settings`; // Redirect to baseUrl/settings
+    });
+    errorPopup.appendChild(getApiKeyButton);
+  }
 
   // Append the error popup to the body
   document.body.appendChild(errorPopup);

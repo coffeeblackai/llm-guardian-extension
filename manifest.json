@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "LLM Guardian",
     "version": "1.0.0",
-    "version_name": "prod",
+    "version_name": "dev",
     "description": "Redacts secrets in ChatGPT prompts.",
     "action": {
       "default_icon": {
@@ -23,7 +23,7 @@
     ],
     "content_scripts": [
       {
-        "matches": ["https://chatgpt.com/*", "http://localhost/*", "https://app.llmsecrets.com/*"],
+        "matches": ["https://chatgpt.com/*"],
         "js": ["content.js"]
       }
     ],
