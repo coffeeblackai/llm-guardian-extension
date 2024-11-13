@@ -2,7 +2,7 @@ console.log("Content script loaded");
 
 // Configuration
 const LOG_LEVEL = 'DEBUG';
-const MAX_SEND_ATTEMPTS = 3;
+const MAX_SEND_ATTEMPTS = 1; // Only attempt once
 const SEND_RETRY_DELAY = 2000; // in milliseconds
 const MUTATION_DEBOUNCE_DELAY = 500; // in milliseconds
 const TEXT_REPLACEMENT_TIMEOUT = 5000; // in milliseconds
@@ -69,9 +69,6 @@ function addEventListeners(textarea) {
   // Handle 'keydown' event for Enter key
   textarea.addEventListener('keydown', handleEnterKey, true); // Use capturing phase
 
-  // Handle 'input' events if needed
-  textarea.addEventListener('input', handleInput, true);
-
   // Use event delegation for the send button
   if (!clickListenerAdded) {
     document.body.addEventListener('click', handleSendButtonClick, true);
@@ -87,9 +84,6 @@ function removeEventListeners(textarea) {
 
   // Remove 'keydown' event listener
   textarea.removeEventListener('keydown', handleEnterKey, true);
-
-  // Remove 'input' event listener
-  textarea.removeEventListener('input', handleInput, true);
 
   // Remove 'click' event listener from body if it was added
   if (clickListenerAdded) {
@@ -128,14 +122,6 @@ function handleSendButtonClick(event) {
   }
 }
 
-// Function to handle input events (optional: implement auto-redact or other logic)
-function handleInput(event) {
-  if (isRedacting) return;
-
-  // Implement additional logic if needed
-  // For example, auto-redact after certain conditions
-}
-
 // Function to initiate the redaction process
 function initiateRedaction(textarea) {
   if (!textarea) return;
@@ -152,6 +138,8 @@ function initiateRedaction(textarea) {
       showErrorPopup("Redaction failed. Please try again.");
       addEventListeners(textarea);
       isRedacting = false;
+    })
+    .finally(() => {
       hideLoadingIndicator();
     });
 }
@@ -213,7 +201,6 @@ function observeTextareaChanges() {
   } else {
     log('ERROR', "MutationObserver is not supported in this browser.");
     showErrorPopup("MutationObserver is not supported in this browser.");
-    // Implement fallback or notify the user
   }
 }
 
@@ -241,23 +228,6 @@ function formatTextForDiv(text) {
   return formattedHTML;
 }
 
-// Helper function to wait for text replacement
-function waitForTextReplacement(textarea, expectedHTML, timeout = TEXT_REPLACEMENT_TIMEOUT) {
-  return new Promise((resolve, reject) => {
-    const observer = new MutationObserver((mutations, obs) => {
-      obs.disconnect();
-      resolve();
-    });
-    observer.observe(textarea, { childList: true, subtree: true });
-
-    // Set up timeout
-    setTimeout(() => {
-      observer.disconnect();
-      reject(new Error('Timeout waiting for text replacement'));
-    }, timeout);
-  });
-}
-
 // Function to scan and redact text
 async function scanAndRedact(text, textarea) {
   if (!text) {
@@ -273,9 +243,7 @@ async function scanAndRedact(text, textarea) {
       log('WARN', "API key is missing or invalid");
       showErrorPopup("API key is missing. Please set your API key in the extension settings.", true);
       isRedacting = false;
-      hideLoadingIndicator();
-      triggerSendAction(); // Trigger send action even if API key is missing
-      return;
+      return; // hideLoadingIndicator is handled in finally
     }
     const response = await fetchWithRetry(`${baseUrl}/api/secrets`, {
       method: 'POST',
@@ -284,7 +252,7 @@ async function scanAndRedact(text, textarea) {
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({ text }),
-    }, MAX_SEND_ATTEMPTS); // Retry up to MAX_SEND_ATTEMPTS times
+    }, MAX_SEND_ATTEMPTS); // Only attempt once
     if (response.ok) {
       const data = await response.json();
       if (data.redactedText) {
@@ -294,35 +262,34 @@ async function scanAndRedact(text, textarea) {
         // Dispatch input event to notify React of the change
         const inputEvent = new Event('input', { bubbles: true });
         textarea.dispatchEvent(inputEvent);
-        log('INFO', "Redaction completed, waiting for text replacement");
+        log('INFO', "Redaction completed, triggering send action");
 
-        // Wait for the text to be fully replaced before triggering send
-        await waitForTextReplacement(textarea, formattedText);
-        log('INFO', "Text replaced successfully, triggering send action");
+        // Trigger send action immediately
         triggerSendAction();
         isRedacting = false;
-        hideLoadingIndicator();
       } else {
         log('WARN', "No redactedText found in the response");
         showErrorPopup("No redacted text found in the response.");
         isRedacting = false;
-        hideLoadingIndicator();
-        triggerSendAction(); // Trigger send action even if redaction fails
+        // Do not trigger send action if redaction fails
       }
+    } else if (response.status === 403) {
+      log('ERROR', "Free limit exceeded. Please upgrade to continue scanning for secrets.");
+      showSubscriptionPopup("Free limit exceeded. Please upgrade to continue scanning for secrets.");
+      isRedacting = false;
     } else {
       log('ERROR', `Error in scanning API call: ${response.status} ${response.statusText}`);
       showErrorPopup("Redaction failed. Please try again.");
       isRedacting = false;
-      hideLoadingIndicator();
-      triggerSendAction(); // Trigger send action even if redaction fails
+      // Do not trigger send action if redaction fails
     }
   } catch (error) {
     log('ERROR', "Error in scanning API call", error);
     showErrorPopup("An error occurred during redaction. Please try again.");
     isRedacting = false;
-    hideLoadingIndicator();
-    triggerSendAction(); // Trigger send action even if redaction fails
+    // Do not trigger send action if redaction fails
   }
+  // hideLoadingIndicator is handled in the finally block of initiateRedaction
 }
 
 // Function to trigger the original send action
@@ -509,8 +476,8 @@ function showLoadingIndicator() {
         <path
           d="M1638 1562 c-64 -53 -192 -162 -285 -243 -92 -80 -229 -192 -303
           -249 -74 -57 -195 -155 -268 -218 l-134 -114 38 -39 c-21 -22 42 -39 47 -39
-          12 0 86 60 197 161 97 88 127 109 154 109 14 0 16 -30 16 -250 0 -137 4 -250 8
-          -250 14 0 247 145 307 192 153 117 275 293 336 483 19 62 22 97 27 313 3 200
+          12 0 86 60 197 161 97 88 127 109 154 109 14 0 16 -30 16 -250 0 -137 4 -250
+          8 -250 14 0 247 145 307 192 153 117 275 293 336 483 19 62 22 97 27 313 3 200
           2 242 -9 242 -8 0 -66 -44 -131 -98z"
           class="svg-elem-4"
         />
@@ -543,16 +510,22 @@ function showErrorPopup(message, showGetApiKeyButton = false) {
   errorPopup.style.top = '20px';
   errorPopup.style.right = '20px';
   errorPopup.style.width = '20%';
-  errorPopup.style.backgroundColor = '#fff'; // White background
-  errorPopup.style.color = '#000'; // Black text
+  errorPopup.style.backgroundColor = '#fff';
+  errorPopup.style.color = '#000';
   errorPopup.style.padding = '15px';
   errorPopup.style.borderRadius = '5px';
   errorPopup.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
-  errorPopup.style.zIndex = '10001'; // Ensure it's on top
+  errorPopup.style.zIndex = '10001';
   errorPopup.style.display = 'flex';
   errorPopup.style.flexDirection = 'column';
-  errorPopup.style.justifyContent = 'space-between';
-  errorPopup.style.alignItems = 'flex-start'; // Align items to the top
+  errorPopup.style.alignItems = 'stretch';
+
+  // Create a container for message and close button
+  const contentContainer = document.createElement('div');
+  contentContainer.style.display = 'flex';
+  contentContainer.style.flexDirection = 'row';
+  contentContainer.style.justifyContent = 'space-between';
+  contentContainer.style.alignItems = 'flex-start';
 
   // Create the close button
   const closeButton = document.createElement('button');
@@ -561,31 +534,39 @@ function showErrorPopup(message, showGetApiKeyButton = false) {
   closeButton.style.border = 'none';
   closeButton.style.color = '#000';
   closeButton.style.cursor = 'pointer';
-  closeButton.style.alignSelf = 'flex-end'; // Align button to the top right
+  closeButton.style.marginLeft = '10px';
+  closeButton.style.alignSelf = 'flex-start';
   closeButton.addEventListener('click', () => {
     errorPopup.remove();
   });
 
-  // Set the message and append the close button
+  // Set the message
   const messageSpan = document.createElement('span');
   messageSpan.textContent = message;
-  errorPopup.appendChild(closeButton);
-  errorPopup.appendChild(messageSpan);
+  messageSpan.style.wordWrap = 'break-word';
+  messageSpan.style.flex = '1';
+
+  // Append message and close button to contentContainer
+  contentContainer.appendChild(messageSpan);
+  contentContainer.appendChild(closeButton);
+
+  // Append contentContainer to errorPopup
+  errorPopup.appendChild(contentContainer);
 
   // Add "Get API Key" button if needed
   if (showGetApiKeyButton) {
     const getApiKeyButton = document.createElement('button');
     getApiKeyButton.textContent = 'Get API Key';
-    getApiKeyButton.style.backgroundColor = '#000'; // Black background
-    getApiKeyButton.style.color = '#fff'; // White text
+    getApiKeyButton.style.backgroundColor = '#000';
+    getApiKeyButton.style.color = '#fff';
     getApiKeyButton.style.border = 'none';
     getApiKeyButton.style.padding = '10px';
     getApiKeyButton.style.borderRadius = '5px';
     getApiKeyButton.style.cursor = 'pointer';
     getApiKeyButton.style.marginTop = '10px';
-    getApiKeyButton.style.width = '100%'; // Full width
+    getApiKeyButton.style.width = '100%';
     getApiKeyButton.addEventListener('click', () => {
-      window.location.href = `${baseUrl}/settings`; // Redirect to baseUrl/settings
+      window.location.href = `${baseUrl}/settings`;
     });
     errorPopup.appendChild(getApiKeyButton);
   }
@@ -599,20 +580,81 @@ function showErrorPopup(message, showGetApiKeyButton = false) {
   }, ERROR_POPUP_TIMEOUT);
 }
 
-// Function to notify the user (can be customized to use browser notifications or UI elements)
-function notifyUser(message) {
-  // Example: Use browser notifications
-  if (chrome.notifications) {
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: chrome.runtime.getURL('icons/icon128.png'),
-      title: 'LLMSSecrets Extension',
-      message: message,
-    });
-  } else {
-    // Fallback: Alert
-    alert(message);
-  }
+// Function to show a subscription popup
+function showSubscriptionPopup(message) {
+  // Prevent multiple popups
+  if (document.getElementById('llmsecrets-subscription-popup')) return;
+
+  // Create the subscription popup container
+  const subscriptionPopup = document.createElement('div');
+  subscriptionPopup.id = 'llmsecrets-subscription-popup';
+  subscriptionPopup.setAttribute('role', 'alert');
+  subscriptionPopup.setAttribute('aria-live', 'assertive');
+  subscriptionPopup.style.position = 'fixed';
+  subscriptionPopup.style.top = '20px';
+  subscriptionPopup.style.right = '20px';
+  subscriptionPopup.style.width = '20%';
+  subscriptionPopup.style.backgroundColor = '#fff';
+  subscriptionPopup.style.color = '#000';
+  subscriptionPopup.style.padding = '15px';
+  subscriptionPopup.style.borderRadius = '5px';
+  subscriptionPopup.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+  subscriptionPopup.style.zIndex = '10001';
+  subscriptionPopup.style.display = 'flex';
+  subscriptionPopup.style.flexDirection = 'column';
+  subscriptionPopup.style.alignItems = 'stretch';
+
+  // Create a container for message and close button
+  const contentContainer = document.createElement('div');
+  contentContainer.style.display = 'flex';
+  contentContainer.style.flexDirection = 'row';
+  contentContainer.style.justifyContent = 'space-between';
+  contentContainer.style.alignItems = 'flex-start';
+
+  // Create the close button
+  const closeButton = document.createElement('button');
+  closeButton.textContent = 'X';
+  closeButton.style.backgroundColor = 'transparent';
+  closeButton.style.border = 'none';
+  closeButton.style.color = '#000';
+  closeButton.style.cursor = 'pointer';
+  closeButton.style.marginLeft = '10px';
+  closeButton.style.alignSelf = 'flex-start';
+  closeButton.addEventListener('click', () => {
+    subscriptionPopup.remove();
+  });
+
+  // Set the message
+  const messageSpan = document.createElement('span');
+  messageSpan.textContent = message;
+  messageSpan.style.wordWrap = 'break-word';
+  messageSpan.style.flex = '1';
+
+  // Append message and close button to contentContainer
+  contentContainer.appendChild(messageSpan);
+  contentContainer.appendChild(closeButton);
+
+  // Append contentContainer to subscriptionPopup
+  subscriptionPopup.appendChild(contentContainer);
+
+  // Add "Subscribe" button
+  const subscribeButton = document.createElement('button');
+  subscribeButton.textContent = 'Subscribe';
+  subscribeButton.style.backgroundColor = '#000';
+  subscribeButton.style.color = '#fff';
+  subscribeButton.style.border = 'none';
+  subscribeButton.style.padding = '10px';
+  subscribeButton.style.borderRadius = '5px';
+  subscribeButton.style.cursor = 'pointer';
+  subscribeButton.style.marginTop = '10px';
+  subscribeButton.style.width = '100%';
+  subscribeButton.addEventListener('click', () => {
+    window.location.href = `${baseUrl}/login`;
+  });
+  subscriptionPopup.appendChild(subscribeButton);
+
+  // Append the subscription popup to the body
+  document.body.appendChild(subscriptionPopup);
 }
 
 // Function to clean up observers and listeners
