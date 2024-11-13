@@ -63,6 +63,27 @@
         button:hover {
             background-color: #333;
         }
+        .status-message {
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 3px;
+            width: 80%;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
+        .success {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #2e7d32;
+            opacity: 1;
+        }
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+            border: 1px solid #c62828;
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -76,6 +97,7 @@
             <button id="getApiKeyButton">Get API Key</button>
             <button id="saveButton">Save</button>
         </div>
+        <div id="statusMessage" class="status-message"></div>
     </div>
     <script src="options.js"></script>
 

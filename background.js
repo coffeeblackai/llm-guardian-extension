@@ -5,3 +5,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.action.setIcon({ path: iconPath });
     }
 });
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'openOptionsPage') {
+      chrome.runtime.openOptionsPage();
+  }
+});

@@ -569,7 +569,7 @@ function showErrorPopup(message, showGetApiKeyButton = false) {
     getApiKeyButton.style.marginTop = '10px';
     getApiKeyButton.style.width = '100%';
     getApiKeyButton.addEventListener('click', () => {
-      window.location.href = `${baseUrl}/settings`;
+      chrome.runtime.sendMessage({ action: 'openOptionsPage' });
     });
     errorPopup.appendChild(getApiKeyButton);
   }
