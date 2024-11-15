@@ -135,9 +135,10 @@ function initiateRedaction(textarea) {
     })
     .catch((error) => {
       log('ERROR', "Redaction failed", error);
-      showErrorPopup("Redaction failed. Please try again.");
+      showErrorPopup("Redaction failed. Continuing with original text.");
       addEventListeners(textarea);
       isRedacting = false;
+      triggerSendAction(); // Continue with original text on error
     })
     .finally(() => {
       hideLoadingIndicator();
@@ -213,46 +214,61 @@ function debounce(func, wait) {
   };
 }
 
-// Function to format text for insertion into a contenteditable div
-function formatTextForDiv(text) {
-  if (!text) return '';
-  // Escape HTML special characters to prevent XSS
-  const div = document.createElement('div');
-  div.textContent = text;
-  let escapedText = div.innerHTML;
-
-  // Split text into lines and wrap each line in a <p> tag
-  const lines = escapedText.split('\n');
-  const formattedHTML = lines.map(line => `<p>${line || '<br>'}</p>`).join('');
-
-  return formattedHTML;
-}
-
 // Function to scan and redact text
 async function scanAndRedact(text, textarea) {
   if (!text) {
     log('WARN', "No text to redact");
     isRedacting = false;
+    triggerSendAction(); // Continue with empty text
     return;
   }
   log('INFO', "Scanning started");
   showLoadingIndicator();
   try {
-    const apiKey = await getApiKey();
-    if (!apiKey) {
-      log('WARN', "API key is missing or invalid");
-      showErrorPopup("API key is missing. Please set your API key in the extension settings.", true);
-      isRedacting = false;
-      return; // hideLoadingIndicator is handled in finally
-    }
-    const response = await fetchWithRetry(`${baseUrl}/api/secrets`, {
-      method: 'POST',
-      headers: {
+    const { apiKey, anonymousId } = await getApiKeyOrAnonymousId();
+    let url, headers, body;
+
+    if (apiKey) {
+      url = `${baseUrl}/api/secrets`;
+      headers = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ text }),
-    }, MAX_SEND_ATTEMPTS); // Only attempt once
+      };
+      body = { text };
+    } else if (anonymousId) {
+      // Check anonymous usage count
+      const anonymousUsageCount = await getAnonymousUsageCount();
+      if (anonymousUsageCount >= 5) {
+        showAnonymousUsageLimitPopup("You have reached your free limit of 5 redactions. Continuing withithout protection.");
+        isRedacting = false;
+        triggerSendAction(); // Continue with original text when limit reached
+        return;
+      }
+      url = `${baseUrl}/api/anon/secrets`;
+      headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Get or generate user ID
+      const userId = await getUserId();
+      body = { 
+        text,
+        id: userId
+      };
+    } else {
+      log('ERROR', "No API key or anonymous ID available");
+      showErrorPopup("No API key or anonymous ID available. Continuing with original text.");
+      isRedacting = false;
+      triggerSendAction(); // Continue with original text when no credentials
+      return;
+    }
+
+    const response = await fetchWithRetry(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    }, MAX_SEND_ATTEMPTS);
+
     if (response.ok) {
       const data = await response.json();
       if (data.redactedText) {
@@ -267,32 +283,75 @@ async function scanAndRedact(text, textarea) {
         // Introduce a delay before triggering send action
         await new Promise(resolve => setTimeout(resolve, SEND_ACTION_DELAY));
 
+        // If using anonymous ID, increment usage count
+        if (anonymousId) {
+          await incrementAnonymousUsageCount();
+        }
+
         // Trigger send action after delay
         triggerSendAction();
         isRedacting = false;
       } else {
         log('WARN', "No redactedText found in the response");
-        showErrorPopup("No redacted text found in the response.");
+        showErrorPopup("No redacted text found in the response. Continuing with original text.");
         isRedacting = false;
-        // Do not trigger send action if redaction fails
+        triggerSendAction(); // Continue with original text when no redacted text
       }
     } else if (response.status === 403) {
-      log('ERROR', "Free limit exceeded. Please upgrade to continue scanning for secrets.");
-      showSubscriptionPopup("Free limit exceeded. Please upgrade to continue scanning for secrets.");
+      if (anonymousId) {
+        log('ERROR', "Anonymous usage limit reached. Continuing with original text.");
+        showAnonymousUsageLimitPopup("You have reached your free limit of 5 secrets. Continuing with original text.");
+      } else {
+        log('ERROR', "Access forbidden. Continuing with original text.");
+        showErrorPopup("Access forbidden. Continuing with original text.");
+      }
       isRedacting = false;
+      triggerSendAction(); // Continue with original text on 403
     } else {
       log('ERROR', `Error in scanning API call: ${response.status} ${response.statusText}`);
-      showErrorPopup("Redaction failed. Please try again.");
+      showErrorPopup("Redaction failed. Continuing with original text.");
       isRedacting = false;
-      // Do not trigger send action if redaction fails
+      triggerSendAction(); // Continue with original text on other errors
     }
   } catch (error) {
     log('ERROR', "Error in scanning API call", error);
-    showErrorPopup("An error occurred during redaction. Please try again.");
+    showErrorPopup("An error occurred during redaction. Continuing with original text.");
     isRedacting = false;
-    // Do not trigger send action if redaction fails
+    triggerSendAction(); // Continue with original text on exception
   }
-  // hideLoadingIndicator is handled in the finally block of initiateRedaction
+}
+
+// Function to get or generate user ID
+async function getUserId() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['userId'], (result) => {
+      if (result.userId) {
+        log('DEBUG', "Retrieved user ID");
+        resolve(result.userId);
+      } else {
+        const userId = generateUUID();
+        chrome.storage.local.set({ userId }, () => {
+          log('DEBUG', "Generated and stored new user ID");
+          resolve(userId);
+        });
+      }
+    });
+  });
+}
+
+// Function to format text for insertion into a contenteditable div
+function formatTextForDiv(text) {
+  if (!text) return '';
+  // Escape HTML special characters to prevent XSS
+  const div = document.createElement('div');
+  div.textContent = text;
+  let escapedText = div.innerHTML;
+
+  // Split text into lines and wrap each line in a <p> tag
+  const lines = escapedText.split('\n');
+  const formattedHTML = lines.map(line => `<p>${line || '<br>'}</p>`).join('');
+
+  return formattedHTML;
 }
 
 // Function to trigger the original send action
@@ -309,23 +368,79 @@ function triggerSendAction() {
       setTimeout(attemptClick, SEND_RETRY_DELAY);
     } else {
       log('ERROR', "Failed to find send button after multiple attempts");
-      showErrorPopup("Unable to send the redacted message automatically.");
+      showErrorPopup("Unable to send the message automatically. Please try sending manually.");
     }
   }
   attemptClick();
 }
 
-// Function to get the API key from Chrome storage
-function getApiKey() {
+// Function to get the API key or anonymous ID
+async function getApiKeyOrAnonymousId() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['apiKey'], (result) => {
+    chrome.storage.local.get(['apiKey'], async (result) => {
       if (result.apiKey && validateApiKey(result.apiKey)) {
         log('DEBUG', "Retrieved API key");
-        resolve(result.apiKey);
+        resolve({ apiKey: result.apiKey });
       } else {
-        log('WARN', "No valid API key found");
-        resolve(null);
+        const anonymousId = await getAnonymousId();
+        resolve({ anonymousId });
       }
+    });
+  });
+}
+
+// Function to get or generate the anonymous ID
+function getAnonymousId() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['anonymousId'], (result) => {
+      if (result.anonymousId) {
+        log('DEBUG', "Retrieved anonymous ID");
+        resolve(result.anonymousId);
+      } else {
+        const anonymousId = generateUUID();
+        chrome.storage.local.set({ anonymousId }, () => {
+          log('DEBUG', "Generated and stored new anonymous ID");
+          resolve(anonymousId);
+        });
+      }
+    });
+  });
+}
+
+// Function to generate a UUID
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = (Math.random() * 16) | 0,
+      v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+// Function to get anonymous usage count
+function getAnonymousUsageCount() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['anonymousUsageCount'], (result) => {
+      const count = result.anonymousUsageCount || 0;
+      resolve(count);
+    });
+  });
+}
+
+// Function to increment anonymous usage count and show total used secrets
+async function incrementAnonymousUsageCount() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['anonymousUsageCount'], (result) => {
+      let count = result.anonymousUsageCount || 0;
+      count += 1;
+      chrome.storage.local.set({ anonymousUsageCount: count }, () => {
+        log('INFO', `Anonymous usage count updated: ${count}`);
+        if (count >= 5) {
+          showAnonymousUsageLimitPopup("You have reached your free limit of 5 secrets. Please get an API key to continue using the extension.");
+        } else {
+          showAnonymousUsagePopup(`You have used ${count} out of 5 free requests.`);
+        }
+        resolve();
+      });
     });
   });
 }
@@ -581,6 +696,149 @@ function showErrorPopup(message, showGetApiKeyButton = false) {
   setTimeout(() => {
     errorPopup.remove();
   }, ERROR_POPUP_TIMEOUT);
+}
+
+// Function to show a popup with total used secrets during anonymous usage
+function showAnonymousUsagePopup(message) {
+  // Prevent multiple popups
+  if (document.getElementById('llmsecrets-anonymous-usage-popup')) return;
+
+  // Create the popup container
+  const usagePopup = document.createElement('div');
+  usagePopup.id = 'llmsecrets-anonymous-usage-popup';
+  usagePopup.setAttribute('role', 'alert');
+  usagePopup.setAttribute('aria-live', 'assertive');
+  usagePopup.style.position = 'fixed';
+  usagePopup.style.top = '20px';
+  usagePopup.style.right = '20px';
+  usagePopup.style.width = '20%';
+  usagePopup.style.backgroundColor = '#fff';
+  usagePopup.style.color = '#000';
+  usagePopup.style.padding = '15px';
+  usagePopup.style.borderRadius = '5px';
+  usagePopup.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+  usagePopup.style.zIndex = '10001';
+  usagePopup.style.display = 'flex';
+  usagePopup.style.flexDirection = 'column';
+  usagePopup.style.alignItems = 'stretch';
+
+  // Create a container for message and close button
+  const contentContainer = document.createElement('div');
+  contentContainer.style.display = 'flex';
+  contentContainer.style.flexDirection = 'row';
+  contentContainer.style.justifyContent = 'space-between';
+  contentContainer.style.alignItems = 'flex-start';
+
+  // Create the close button
+  const closeButton = document.createElement('button');
+  closeButton.textContent = 'X';
+  closeButton.style.backgroundColor = 'transparent';
+  closeButton.style.border = 'none';
+  closeButton.style.color = '#000';
+  closeButton.style.cursor = 'pointer';
+  closeButton.style.marginLeft = '10px';
+  closeButton.style.alignSelf = 'flex-start';
+  closeButton.addEventListener('click', () => {
+    usagePopup.remove();
+  });
+
+  // Set the message
+  const messageSpan = document.createElement('span');
+  messageSpan.textContent = message;
+  messageSpan.style.wordWrap = 'break-word';
+  messageSpan.style.flex = '1';
+
+  // Append message and close button to contentContainer
+  contentContainer.appendChild(messageSpan);
+  contentContainer.appendChild(closeButton);
+
+  // Append contentContainer to usagePopup
+  usagePopup.appendChild(contentContainer);
+
+  // Append the popup to the body
+  document.body.appendChild(usagePopup);
+
+  // Automatically remove the popup after a timeout
+  setTimeout(() => {
+    usagePopup.remove();
+  }, ERROR_POPUP_TIMEOUT);
+}
+
+// Function to show a popup when anonymous usage limit is reached
+function showAnonymousUsageLimitPopup(message) {
+  // Prevent multiple popups
+  if (document.getElementById('llmsecrets-anonymous-usage-limit-popup')) return;
+
+  // Create the popup container
+  const limitPopup = document.createElement('div');
+  limitPopup.id = 'llmsecrets-anonymous-usage-limit-popup';
+  limitPopup.setAttribute('role', 'alert');
+  limitPopup.setAttribute('aria-live', 'assertive');
+  limitPopup.style.position = 'fixed';
+  limitPopup.style.top = '20px';
+  limitPopup.style.right = '20px';
+  limitPopup.style.width = '20%';
+  limitPopup.style.backgroundColor = '#fff';
+  limitPopup.style.color = '#000';
+  limitPopup.style.padding = '15px';
+  limitPopup.style.borderRadius = '5px';
+  limitPopup.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+  limitPopup.style.zIndex = '10001';
+  limitPopup.style.display = 'flex';
+  limitPopup.style.flexDirection = 'column';
+  limitPopup.style.alignItems = 'stretch';
+
+  // Create a container for message and close button
+  const contentContainer = document.createElement('div');
+  contentContainer.style.display = 'flex';
+  contentContainer.style.flexDirection = 'row';
+  contentContainer.style.justifyContent = 'space-between';
+  contentContainer.style.alignItems = 'flex-start';
+
+  // Create the close button
+  const closeButton = document.createElement('button');
+  closeButton.textContent = 'X';
+  closeButton.style.backgroundColor = 'transparent';
+  closeButton.style.border = 'none';
+  closeButton.style.color = '#000';
+  closeButton.style.cursor = 'pointer';
+  closeButton.style.marginLeft = '10px';
+  closeButton.style.alignSelf = 'flex-start';
+  closeButton.addEventListener('click', () => {
+    limitPopup.remove();
+  });
+
+  // Set the message
+  const messageSpan = document.createElement('span');
+  messageSpan.textContent = message;
+  messageSpan.style.wordWrap = 'break-word';
+  messageSpan.style.flex = '1';
+
+  // Append message and close button to contentContainer
+  contentContainer.appendChild(messageSpan);
+  contentContainer.appendChild(closeButton);
+
+  // Append contentContainer to limitPopup
+  limitPopup.appendChild(contentContainer);
+
+  // Add "Get API Key" button
+  const getApiKeyButton = document.createElement('button');
+  getApiKeyButton.textContent = 'Get API Key';
+  getApiKeyButton.style.backgroundColor = '#000';
+  getApiKeyButton.style.color = '#fff';
+  getApiKeyButton.style.border = 'none';
+  getApiKeyButton.style.padding = '10px';
+  getApiKeyButton.style.borderRadius = '5px';
+  getApiKeyButton.style.cursor = 'pointer';
+  getApiKeyButton.style.marginTop = '10px';
+  getApiKeyButton.style.width = '100%';
+  getApiKeyButton.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'openOptionsPage' });
+  });
+  limitPopup.appendChild(getApiKeyButton);
+
+  // Append the popup to the body
+  document.body.appendChild(limitPopup);
 }
 
 // Function to show a subscription popup
